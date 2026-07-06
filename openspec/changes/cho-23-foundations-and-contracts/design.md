@@ -40,12 +40,15 @@ class Settings:
     # --- FinX Reports API ---
     finx_base_url: str = "https://finx.choiceindia.com"
     # --- Cost accounting (INR) ---
-    usd_to_inr: float                    # env USD_TO_INR (required; e.g. 83.0)
+    usd_to_inr: float                    # live-fetched per process; USD_TO_INR env is the fallback
 
 def get_settings() -> Settings: ...      # cached singleton; raises on missing required env
 ```
 
-Model config for the agent is always `thinking: {"type": "disabled"}` (no adaptive/extended thinking). The exact `ANTHROPIC_MODEL` string is confirmed against Anthropic docs at implementation time and set in `.env` only.
+Model config for the agent is always `thinking: {"type": "disabled"}` (no adaptive/extended thinking). The pinned `ANTHROPIC_MODEL` is `claude-sonnet-4-6` (Sonnet 4.6; the "Sonnet 3.6" nickname in the seed docs is not an official id), confirmed against Anthropic docs and set in `.env`.
+
+### D1a. USD→INR rate fetched live, env fallback
+`backend/config/fx.py` exposes `fetch_usd_to_inr(fallback: float | None) -> float`, which fetches the current rate once per process (`GET https://open.er-api.com/v6/latest/USD` → `rates.INR`, stdlib `urllib`, `@lru_cache`). `get_settings()` sets `usd_to_inr` from this fetch, passing the `USD_TO_INR` env var (if present) as the fallback used when the FX API is unreachable (offline/CI). `USD_TO_INR` is thus an optional fallback, not a required var. Rationale: cost accounting should track the real rate rather than a manually-maintained constant, without adding a hard network dependency to every boot.
 
 ### D2. Cost table as data, not scattered constants
 `backend/config/pricing.py` holds per-model per-token USD prices; cost accounting everywhere derives INR from `usd_to_inr`.
@@ -54,7 +57,7 @@ Model config for the agent is always `thinking: {"type": "disabled"}` (no adapti
 # backend/config/pricing.py
 # USD per 1M tokens; keyed by model id.
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    "<anthropic-model-id>": {"input": 3.00, "output": 15.00},   # placeholder; set to pinned model's real rates
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},   # published Sonnet 4.6 rates, USD per 1M
 }
 EMBEDDING_PRICING: dict[str, float] = {
     "text-embedding-3-large": 0.13,   # USD per 1M tokens
@@ -226,6 +229,6 @@ CONTRACT_NOTE_TOOL = {
 
 ## Open Questions
 
-- Exact `ANTHROPIC_MODEL` id string (resolved at P3 against Anthropic docs; thinking disabled is fixed).
-- Real published per-token rates for the pinned model (fills `MODEL_PRICING`).
+- ~~Exact `ANTHROPIC_MODEL` id string~~ — resolved: `claude-sonnet-4-6` (thinking disabled is fixed).
+- ~~Real published per-token rates for the pinned model~~ — resolved: Sonnet 4.6 $3.00 in / $15.00 out per 1M.
 - FinX report **response** schemas (optional; tools pass through until provided).

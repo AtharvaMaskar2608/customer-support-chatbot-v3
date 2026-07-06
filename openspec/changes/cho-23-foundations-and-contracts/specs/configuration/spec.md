@@ -12,17 +12,34 @@ The `Settings` contract SHALL include exactly these fields:
 - `embedding_model: str = "text-embedding-3-large"`, `embedding_dim: int = 3072`
 - `confident_api_key: str | None` (optional, env `CONFIDENT_API_KEY`)
 - `finx_base_url: str = "https://finx.choiceindia.com"`
-- `usd_to_inr: float` (required, env `USD_TO_INR`)
+- `usd_to_inr: float` (fetched live per process; `USD_TO_INR` env is the offline/CI fallback)
 
 Accessor: `get_settings() -> Settings` returns a cached singleton.
 
+The required env vars are `DATABASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, and `OPENAI_API_KEY`. `USD_TO_INR` is optional (see the live-rate requirement below).
+
 #### Scenario: All required env vars present
-- **WHEN** `get_settings()` is called with `DATABASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `OPENAI_API_KEY`, and `USD_TO_INR` set
-- **THEN** it returns a `Settings` object populated from the environment with defaults applied for unset optional fields
+- **WHEN** `get_settings()` is called with `DATABASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, and `OPENAI_API_KEY` set
+- **THEN** it returns a `Settings` object populated from the environment (with `usd_to_inr` fetched live) and defaults applied for unset optional fields
 
 #### Scenario: Required env var missing
 - **WHEN** `get_settings()` is called and a required env var (e.g. `DATABASE_URL`) is absent
 - **THEN** it raises an error naming the missing variable, and no partially-initialized settings are returned
+
+### Requirement: Live USD→INR rate with env fallback
+The system SHALL source `usd_to_inr` from a live exchange-rate fetch (`open.er-api.com`, `GET https://open.er-api.com/v6/latest/USD` → `rates.INR`) performed once per process and cached, via `fetch_usd_to_inr(fallback: float | None) -> float`. On any fetch/parse failure it MUST fall back to the `USD_TO_INR` env var when set; if the fetch fails and no fallback is set, it MUST raise. `USD_TO_INR` is therefore an optional fallback, not a required variable.
+
+#### Scenario: Live rate fetched
+- **WHEN** `get_settings()` is called and the FX API is reachable
+- **THEN** `settings.usd_to_inr` holds the current live USD→INR rate, fetched at most once for the process lifetime
+
+#### Scenario: FX API unreachable, fallback set
+- **WHEN** the live fetch fails and `USD_TO_INR` is set in the environment
+- **THEN** `settings.usd_to_inr` equals the `USD_TO_INR` value
+
+#### Scenario: FX API unreachable, no fallback
+- **WHEN** the live fetch fails and `USD_TO_INR` is unset
+- **THEN** settings loading raises an error rather than returning a stale or zero rate
 
 ### Requirement: `.env.example` template
 The repository SHALL contain `.env.example` listing every configuration key (required and optional) with placeholder values and inline comments, and no real secrets.
