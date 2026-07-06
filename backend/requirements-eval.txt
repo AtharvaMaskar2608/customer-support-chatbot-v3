@@ -1,0 +1,4 @@
+# Eval/tracing dependencies — pinned here (single owner) so the eval and tracing
+# changes consume them without contending on dependency files.
+# Install alongside requirements.txt: pip install -r requirements.txt -r requirements-eval.txt
+deepeval==4.0.7
